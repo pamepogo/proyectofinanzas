@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "62186532400",
+    "project_id": "mi-finanzas-app-pp",
+    "storage_bucket": "mi-finanzas-app-pp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:62186532400:android:6036c82be493d121e287f5",
+        "android_client_info": {
+          "package_name": "com.example.gastito"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCsQ1PmC49eqg2sB36hK6wAcL1BR1m8S1M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

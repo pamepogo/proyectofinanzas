@@ -1,6 +1,8 @@
+// screens/savings_screen.dart
 import 'package:flutter/material.dart';
 import '../models/saving_goal.dart';
 import '../services/saving_service.dart';
+import '../services/optimized_transaction_service.dart';
 import '../widgets/custom_drawer.dart';
 
 class SavingsScreen extends StatefulWidget {
@@ -11,13 +13,15 @@ class SavingsScreen extends StatefulWidget {
 }
 
 class _SavingsScreenState extends State<SavingsScreen> {
-  final SavingService _savingService = SavingService();
+  final OptimizedTransactionService _transactionService = OptimizedTransactionService();
+  late final SavingService _savingService;
   List<SavingGoal> _savingGoals = [];
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
+    _savingService = SavingService(_transactionService);
     _loadSavingGoals();
   }
 
@@ -29,11 +33,86 @@ class _SavingsScreenState extends State<SavingsScreen> {
         _isLoading = false;
       });
     } catch (e) {
-      print('❌ Error cargando metas de ahorro: $e');
+      print('Error cargando metas de ahorro: $e');
       setState(() {
         _isLoading = false;
       });
+      _showErrorSnackbar('Error cargando metas: $e');
     }
+  }
+
+  Future<void> _refreshData() async {
+    setState(() {
+      _isLoading = true;
+    });
+    _transactionService.clearCache();
+    await _loadSavingGoals();
+  }
+
+  Future<void> _addSavingGoal(SavingGoal goal) async {
+    try {
+      await _savingService.createSavingGoal(goal);
+      await _refreshData();
+      
+      _showSuccessSnackbar('Meta "${goal.name}" creada exitosamente');
+    } catch (e) {
+      print('Error creando meta: $e');
+      _showErrorSnackbar('Error creando meta: $e');
+    }
+  }
+
+  Future<void> _updateSavingGoal(SavingGoal goal) async {
+    try {
+      await _savingService.updateSavingGoal(goal);
+      await _refreshData();
+      
+      _showSuccessSnackbar('Meta "${goal.name}" actualizada');
+    } catch (e) {
+      print('Error actualizando meta: $e');
+      _showErrorSnackbar('Error actualizando meta: $e');
+    }
+  }
+
+  Future<void> _addToSavingGoal(String goalId, double amount) async {
+    try {
+      await _savingService.addToSavingGoal(goalId, amount);
+      await _refreshData();
+      
+      _showSuccessSnackbar('\$${amount.toStringAsFixed(2)} agregado a la meta');
+    } catch (e) {
+      print('Error agregando dinero: $e');
+      _showErrorSnackbar('Error agregando dinero: $e');
+    }
+  }
+
+  Future<void> _deleteSavingGoal(SavingGoal goal) async {
+    try {
+      await _savingService.deleteSavingGoal(goal.id!);
+      await _refreshData();
+      
+      _showSuccessSnackbar('Meta "${goal.name}" eliminada');
+    } catch (e) {
+      print('Error eliminando meta: $e');
+      _showErrorSnackbar('Error eliminando meta: $e');
+    }
+  }
+
+  void _showErrorSnackbar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+
+  void _showSuccessSnackbar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.green,
+      ),
+    );
   }
 
   @override
@@ -62,29 +141,43 @@ class _SavingsScreenState extends State<SavingsScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadSavingGoals,
+            onPressed: _refreshData,
             tooltip: 'Actualizar',
-          ),
-          IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: _showAddGoalDialog,
-            tooltip: 'Nueva meta',
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
-              ),
-            )
-          : _savingGoals.isEmpty
-              ? _buildEmptyState()
-              : _buildGoalsList(),
+      body: RefreshIndicator(
+        onRefresh: _refreshData,
+        backgroundColor: const Color(0xFF6366F1),
+        color: Colors.white,
+        child: _isLoading
+            ? _buildLoading()
+            : _savingGoals.isEmpty
+                ? _buildEmptyState()
+                : _buildGoalsList(),
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _showAddGoalDialog,
         backgroundColor: const Color(0xFF6366F1),
         child: const Icon(Icons.add, color: Colors.white),
+      ),
+    );
+  }
+
+  Widget _buildLoading() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
+          ),
+          SizedBox(height: 16),
+          Text(
+            'Cargando metas...',
+            style: TextStyle(color: Colors.white70),
+          ),
+        ],
       ),
     );
   }
@@ -134,6 +227,9 @@ class _SavingsScreenState extends State<SavingsScreen> {
   }
 
   Widget _buildGoalCard(SavingGoal goal) {
+    final progress = goal.targetAmount > 0 ? goal.currentAmount / goal.targetAmount : 0.0;
+    final daysRemaining = goal.targetDate.difference(DateTime.now()).inDays;
+
     return Card(
       color: const Color(0xFF1E1B4B),
       margin: const EdgeInsets.only(bottom: 16),
@@ -182,7 +278,7 @@ class _SavingsScreenState extends State<SavingsScreen> {
             
             // Barra de progreso
             LinearProgressIndicator(
-              value: goal.progress.clamp(0.0, 1.0),
+              value: progress.clamp(0.0, 1.0),
               backgroundColor: Colors.grey[800],
               valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF10B981)),
               minHeight: 8,
@@ -213,7 +309,7 @@ class _SavingsScreenState extends State<SavingsScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              '${(goal.progress * 100).toStringAsFixed(1)}% completado • ${goal.daysRemaining} días restantes',
+              '${(progress * 100).toStringAsFixed(1)}% completado • ${daysRemaining.clamp(0, 365)} días restantes',
               style: const TextStyle(
                 fontSize: 12,
                 color: Colors.white60,
@@ -255,10 +351,7 @@ class _SavingsScreenState extends State<SavingsScreen> {
     showDialog(
       context: context,
       builder: (context) => AddEditGoalDialog(
-        onSave: (goal) async {
-          await _savingService.addSavingGoal(goal);
-          _loadSavingGoals();
-        },
+        onSave: _addSavingGoal,
       ),
     );
   }
@@ -268,10 +361,7 @@ class _SavingsScreenState extends State<SavingsScreen> {
       context: context,
       builder: (context) => AddEditGoalDialog(
         goal: goal,
-        onSave: (updatedGoal) async {
-          await _savingService.updateSavingGoal(updatedGoal);
-          _loadSavingGoals();
-        },
+        onSave: _updateSavingGoal,
       ),
     );
   }
@@ -309,9 +399,10 @@ class _SavingsScreenState extends State<SavingsScreen> {
             onPressed: () {
               final amount = double.tryParse(amountController.text) ?? 0;
               if (amount > 0) {
-                _savingService.addToSavingGoal(goal.id!, amount);
-                _loadSavingGoals();
+                _addToSavingGoal(goal.id!, amount);
                 Navigator.pop(context);
+              } else {
+                _showErrorSnackbar('Ingresa una cantidad válida');
               }
             },
             child: const Text(
@@ -347,8 +438,7 @@ class _SavingsScreenState extends State<SavingsScreen> {
           ),
           TextButton(
             onPressed: () {
-              _savingService.deleteSavingGoal(goal.id!);
-              _loadSavingGoals();
+              _deleteSavingGoal(goal);
               Navigator.pop(context);
             },
             child: const Text(
@@ -528,11 +618,17 @@ class _AddEditGoalDialogState extends State<AddEditGoalDialog> {
     final targetAmount = double.tryParse(_targetAmountController.text) ?? 0;
 
     if (name.isEmpty || targetAmount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Completa todos los campos obligatorios'),
+          backgroundColor: Colors.red,
+        ),
+      );
       return;
     }
 
     final goal = SavingGoal(
-      id: widget.goal?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+      id: widget.goal?.id,
       name: name,
       description: description,
       targetAmount: targetAmount,

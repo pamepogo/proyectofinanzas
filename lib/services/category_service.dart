@@ -1,4 +1,4 @@
-import '../models/expense.dart'; // Importa desde expense.dart donde está TransactionType
+import '../models/transaction.dart';
 
 class CategoryService {
   static final List<String> gastosCategories = [

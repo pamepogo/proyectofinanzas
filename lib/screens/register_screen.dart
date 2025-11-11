@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({Key? key}) : super(key: key);
@@ -17,6 +18,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
 
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+
   void _register() async {
     if (_formKey.currentState!.validate()) {
       if (_passwordController.text != _confirmPasswordController.text) {
@@ -33,17 +36,54 @@ class _RegisterScreenState extends State<RegisterScreen> {
         _isLoading = true;
       });
 
-      await Future.delayed(const Duration(milliseconds: 2000));
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('¡Cuenta creada exitosamente!'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      try {
+        final UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
+          email: _emailController.text.trim(),
+          password: _passwordController.text.trim(),
+        );
 
-      await Future.delayed(const Duration(milliseconds: 1000));
-      Navigator.pushReplacementNamed(context, '/login');
+        // Usuario creado exitosamente
+        if (userCredential.user != null) {
+          // Opcional: Actualizar el display name del usuario
+          await userCredential.user!.updateDisplayName(_nameController.text.trim());
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('¡Cuenta creada exitosamente!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+
+          await Future.delayed(const Duration(milliseconds: 1000));
+          Navigator.pushReplacementNamed(context, '/home');
+        }
+      } on FirebaseAuthException catch (e) {
+        String errorMessage = 'Error al crear la cuenta';
+        
+        if (e.code == 'weak-password') {
+          errorMessage = 'La contraseña es muy débil';
+        } else if (e.code == 'email-already-in-use') {
+          errorMessage = 'Ya existe una cuenta con este email';
+        } else if (e.code == 'invalid-email') {
+          errorMessage = 'Email inválido';
+        } else if (e.code == 'operation-not-allowed') {
+          errorMessage = 'Operación no permitida';
+        }
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: Colors.red,
+          ),
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error inesperado: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
 
       setState(() {
         _isLoading = false;
@@ -256,7 +296,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           controller: _nameController,
                           hintText: 'Nombre completo',
                           icon: Icons.person_outline_rounded,
-                          borderColor: const Color(0xFF10B981), // Esmeralda luminosa
+                          borderColor: const Color(0xFF10B981),
                           validator: (value) {
                             if (value == null || value.isEmpty) return 'Ingresa tu nombre';
                             if (value.length < 2) return 'Nombre muy corto';
@@ -269,7 +309,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           controller: _emailController,
                           hintText: 'tu@email.com',
                           icon: Icons.email_outlined,
-                          borderColor: const Color(0xFF06B6D4), // Cian eléctrico
+                          borderColor: const Color(0xFF06B6D4),
                           keyboardType: TextInputType.emailAddress,
                           validator: (value) {
                             if (value == null || value.isEmpty) return 'Ingresa tu email';
@@ -288,7 +328,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               _obscurePassword = !_obscurePassword;
                             });
                           },
-                          borderColor: const Color(0xFF8B5CF6), // Púrpura brillante
+                          borderColor: const Color(0xFF8B5CF6),
                           validator: (value) {
                             if (value == null || value.isEmpty) return 'Ingresa contraseña';
                             if (value.length < 6) return 'Mínimo 6 caracteres';
@@ -306,7 +346,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               _obscureConfirmPassword = !_obscureConfirmPassword;
                             });
                           },
-                          borderColor: const Color(0xFFEC4899), // Rosa neón
+                          borderColor: const Color(0xFFEC4899),
                           validator: (value) {
                             if (value == null || value.isEmpty) return 'Confirma contraseña';
                             return null;
@@ -384,7 +424,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 'Iniciar sesión',
                                 style: TextStyle(
                                   fontSize: 14,
-                                  color: Color(0xFF10B981), // Esmeralda luminosa
+                                  color: Color(0xFF10B981),
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),

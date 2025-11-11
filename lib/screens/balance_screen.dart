@@ -1,6 +1,7 @@
+// screens/optimized_balance_screen.dart
 import 'package:flutter/material.dart';
-import '../models/expense.dart';
-import '../services/expense_service.dart';
+import '../models/transaction.dart';
+import '../services/optimized_transaction_service.dart';
 import '../widgets/custom_drawer.dart';
 
 class BalanceScreen extends StatefulWidget {
@@ -11,7 +12,7 @@ class BalanceScreen extends StatefulWidget {
 }
 
 class _BalanceScreenState extends State<BalanceScreen> {
-  final ExpenseService _expenseService = ExpenseService();
+  final OptimizedTransactionService _transactionService = OptimizedTransactionService();
   List<Transaction> _transactions = [];
   Map<String, double> _totals = {'ingresos': 0, 'gastos': 0, 'balance': 0};
   Map<String, double> _monthlyData = {};
@@ -25,9 +26,16 @@ class _BalanceScreenState extends State<BalanceScreen> {
 
   Future<void> _loadData() async {
     try {
-      final transactions = await _expenseService.getTransactions();
-      final totals = await _expenseService.getTotals();
-      final monthlyData = await _calculateMonthlyData(transactions);
+      setState(() {
+        _isLoading = true;
+      });
+
+      // ✅ Cargar en paralelo
+      final transactions = await _transactionService.getTransactionsAsFuture();
+      
+      // ✅ Calcular en el mismo setState para una sola actualización
+      final totals = _calculateTotals(transactions);
+      final monthlyData = _calculateMonthlyData(transactions);
       
       setState(() {
         _transactions = transactions;
@@ -36,32 +44,62 @@ class _BalanceScreenState extends State<BalanceScreen> {
         _isLoading = false;
       });
     } catch (e) {
-      print('❌ Error cargando datos de balance: $e');
+      print('Error cargando datos de balance: $e');
       setState(() {
         _isLoading = false;
       });
+      _showErrorSnackbar('Error cargando datos: $e');
     }
   }
 
-  Future<Map<String, double>> _calculateMonthlyData(List<Transaction> transactions) async {
-    Map<String, double> monthly = {};
-    
-    // Inicializar todos los meses del año actual
+  // ✅ Métodos de cálculo optimizados
+  Map<String, double> _calculateTotals(List<Transaction> transactions) {
+    double ingresos = 0;
+    double gastos = 0;
+
+    for (final transaction in transactions) {
+      if (transaction.type == TransactionType.INGRESO) {
+        ingresos += transaction.amount;
+      } else {
+        gastos += transaction.amount;
+      }
+    }
+
+    return {
+      'ingresos': ingresos,
+      'gastos': gastos,
+      'balance': ingresos - gastos,
+    };
+  }
+
+  Map<String, double> _calculateMonthlyData(List<Transaction> transactions) {
+    final monthly = <String, double>{};
     final now = DateTime.now();
+
+    // Inicializar meses
     for (int i = 1; i <= 12; i++) {
       final monthKey = '${now.year}-${i.toString().padLeft(2, '0')}';
       monthly[monthKey] = 0.0;
     }
-    
-    // Calcular balance por mes
-    for (var transaction in transactions) {
+
+    // Calcular balances
+    for (final transaction in transactions) {
       final monthKey = '${transaction.date.year}-${transaction.date.month.toString().padLeft(2, '0')}';
       if (monthly.containsKey(monthKey)) {
         monthly[monthKey] = monthly[monthKey]! + transaction.signedAmount;
       }
     }
-    
+
     return monthly;
+  }
+
+  void _showErrorSnackbar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+      ),
+    );
   }
 
   String _getMonthName(String monthKey) {
@@ -98,33 +136,47 @@ class _BalanceScreenState extends State<BalanceScreen> {
         ],
       ),
       body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
-              ),
-            )
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 🎯 RESUMEN PRINCIPAL
-                  _buildMainSummary(),
-                  const SizedBox(height: 24),
-                  
-                  // 📈 BALANCE ANUAL
-                  _buildAnnualBalance(),
-                  const SizedBox(height: 24),
-                  
-                  // 📊 ESTADÍSTICAS POR CATEGORÍA
-                  _buildCategoryStats(),
-                  const SizedBox(height: 24),
-                  
-                  // 📅 ÚLTIMAS TRANSACCIONES
-                  _buildRecentTransactions(),
-                ],
-              ),
-            ),
+          ? _buildLoadingScreen()
+          : _buildContent(),
+    );
+  }
+
+  Widget _buildLoadingScreen() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
+          ),
+          SizedBox(height: 16),
+          Text(
+            'Cargando datos...',
+            style: TextStyle(color: Colors.white70),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContent() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Solo cargar widgets necesarios
+          _buildMainSummary(),
+          if (_monthlyData.isNotEmpty) ...[
+            SizedBox(height: 24),
+            _buildAnnualBalance(),
+          ],
+          SizedBox(height: 24),
+          _buildCategoryStats(),
+          SizedBox(height: 24),
+          _buildRecentTransactions(),
+        ],
+      ),
     );
   }
 

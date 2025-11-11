@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -14,8 +15,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   bool _obscurePassword = true;
 
-  final String _demoEmail = "usuario@gmail.com";
-  final String _demoPassword = "123456";
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
   void _login() async {
     if (_formKey.currentState!.validate()) {
@@ -23,16 +23,46 @@ class _LoginScreenState extends State<LoginScreen> {
         _isLoading = true;
       });
 
-      await Future.delayed(const Duration(milliseconds: 1500));
+      try {
+        final UserCredential userCredential = await _auth.signInWithEmailAndPassword(
+          email: _emailController.text.trim(),
+          password: _passwordController.text.trim(),
+        );
 
-      if (_emailController.text == _demoEmail && 
-          _passwordController.text == _demoPassword) {
-        Navigator.pushReplacementNamed(context, '/home');
-      } else {
+        // Login exitoso
+        if (userCredential.user != null) {
+          Navigator.pushReplacementNamed(context, '/home');
+        }
+      } on FirebaseAuthException catch (e) {
+        String errorMessage = 'Error al iniciar sesión';
+        
+        if (e.code == 'user-not-found') {
+          errorMessage = 'No existe una cuenta con este email';
+        } else if (e.code == 'wrong-password') {
+          errorMessage = 'Contraseña incorrecta';
+        } else if (e.code == 'invalid-email') {
+          errorMessage = 'Email inválido';
+        } else if (e.code == 'user-disabled') {
+          errorMessage = 'Esta cuenta ha sido deshabilitada';
+        } else if (e.code == 'too-many-requests') {
+          errorMessage = 'Demasiados intentos. Intenta más tarde';
+        } else if (e.code == 'network-request-failed') {
+          errorMessage = 'Error de conexión. Verifica tu internet';
+        }
+        
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Email o contraseña incorrectos'),
+          SnackBar(
+            content: Text(errorMessage),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error inesperado: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
           ),
         );
       }
@@ -43,8 +73,129 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void _skipLogin() {
-    Navigator.pushReplacementNamed(context, '/home');
+  void _resetPassword() async {
+    final email = _emailController.text.trim();
+    
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ingresa tu email para recuperar la contraseña'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    // Validar formato de email
+    final emailRegex = RegExp(r'^[^@]+@[^@]+\.[^@]+');
+    if (!emailRegex.hasMatch(email)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ingresa un email válido'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await _auth.sendPasswordResetEmail(email: email);
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Email de recuperación enviado. Revisa tu bandeja de entrada'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 5),
+        ),
+      );
+    } on FirebaseAuthException catch (e) {
+      String errorMessage = 'Error enviando email de recuperación';
+      
+      if (e.code == 'user-not-found') {
+        errorMessage = 'No existe una cuenta con este email';
+      } else if (e.code == 'invalid-email') {
+        errorMessage = 'Email inválido';
+      } else if (e.code == 'network-request-failed') {
+        errorMessage = 'Error de conexión. Verifica tu internet';
+      }
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(errorMessage),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error inesperado: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+
+    setState(() {
+      _isLoading = false;
+    });
+  }
+
+  // Validación personalizada para email
+  String? _validateEmail(String? value) {
+    if (value == null || value.isEmpty) {
+      return '❌ Ingresa tu email';
+    }
+    
+    final trimmedValue = value.trim();
+    
+    // Validar formato básico de email
+    final emailRegex = RegExp(r'^[^@]+@[^@]+\.[^@]+');
+    if (!emailRegex.hasMatch(trimmedValue)) {
+      return '❌ Formato de email inválido';
+    }
+    
+    // Validar longitud
+    if (trimmedValue.length < 5) {
+      return '❌ Email demasiado corto';
+    }
+    
+    if (trimmedValue.length > 100) {
+      return '❌ Email demasiado largo';
+    }
+    
+    return null;
+  }
+
+  // Validación personalizada para contraseña
+  String? _validatePassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return '❌ Ingresa tu contraseña';
+    }
+    
+    // Validar longitud mínima
+    if (value.length < 6) {
+      return '❌ Mínimo 6 caracteres';
+    }
+    
+    // Validar longitud máxima
+    if (value.length > 50) {
+      return '❌ Máximo 50 caracteres';
+    }
+    
+    // Validar caracteres especiales (opcional)
+    final hasLetters = RegExp(r'[a-zA-Z]').hasMatch(value);
+    if (!hasLetters) {
+      return '❌ La contraseña debe contener letras';
+    }
+    
+    return null;
   }
 
   @override
@@ -83,7 +234,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ],
                   ),
                   child: const Icon(
-                    Icons.monetization_on_rounded, // Ícono de dinero
+                    Icons.monetization_on_rounded,
                     size: 50,
                     color: Colors.white,
                   ),
@@ -150,7 +301,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       children: [
                         // Campo Email
                         Container(
-                          height: 50,
+                          height: 55,
                           decoration: BoxDecoration(
                             color: Colors.black.withOpacity(0.6),
                             borderRadius: BorderRadius.circular(12),
@@ -177,20 +328,21 @@ class _LoginScreenState extends State<LoginScreen> {
                               prefixIcon: Icon(Icons.email_outlined, size: 20, color: Color(0xFF06B6D4)),
                               border: InputBorder.none,
                               contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              errorStyle: TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFFEC4899),
+                              ),
                             ),
                             keyboardType: TextInputType.emailAddress,
-                            validator: (value) {
-                              if (value == null || value.isEmpty) return 'Ingresa tu email';
-                              if (!value.contains('@')) return 'Email inválido';
-                              return null;
-                            },
+                            validator: _validateEmail,
+                            textInputAction: TextInputAction.next,
                           ),
                         ),
                         const SizedBox(height: 16),
                         
                         // Campo Contraseña
                         Container(
-                          height: 50,
+                          height: 55,
                           decoration: BoxDecoration(
                             color: Colors.black.withOpacity(0.6),
                             borderRadius: BorderRadius.circular(12),
@@ -232,25 +384,53 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                               border: InputBorder.none,
                               contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              errorStyle: const TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFFEC4899),
+                              ),
                             ),
-                            validator: (value) {
-                              if (value == null || value.isEmpty) return 'Ingresa tu contraseña';
-                              if (value.length < 6) return 'Mínimo 6 caracteres';
-                              return null;
-                            },
+                            validator: _validatePassword,
+                            textInputAction: TextInputAction.done,
                             onFieldSubmitted: (_) => _login(),
                           ),
                         ),
-                        const SizedBox(height: 24),
+                        
+                        // Olvidé mi contraseña
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed: _isLoading ? null : _resetPassword,
+                            child: Text(
+                              '¿Olvidaste tu contraseña?',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: _isLoading ? Colors.white30 : const Color(0xFF06B6D4),
+                              ),
+                            ),
+                          ),
+                        ),
+                        
+                        const SizedBox(height: 16),
                         
                         // Botón de login
                         SizedBox(
                           width: double.infinity,
                           height: 50,
                           child: _isLoading
-                              ? const Center(
-                                  child: CircularProgressIndicator(
-                                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
+                              ? Container(
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                                      begin: Alignment.centerLeft,
+                                      end: Alignment.centerRight,
+                                    ),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Center(
+                                    child: CircularProgressIndicator(
+                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                      strokeWidth: 2,
+                                    ),
                                   ),
                                 )
                               : ElevatedButton(
@@ -308,14 +488,14 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             const SizedBox(width: 6),
                             GestureDetector(
-                              onTap: () {
+                              onTap: _isLoading ? null : () {
                                 Navigator.pushNamed(context, '/register');
                               },
-                              child: const Text(
+                              child: Text(
                                 'Crear cuenta',
                                 style: TextStyle(
                                   fontSize: 14,
-                                  color: Color(0xFF10B981),
+                                  color: _isLoading ? Colors.white30 : const Color(0xFF10B981),
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -323,21 +503,6 @@ class _LoginScreenState extends State<LoginScreen> {
                           ],
                         ),
                       ],
-                    ),
-                  ),
-                ),
-                
-                const SizedBox(height: 30),
-                
-                // Botón para saltar
-                TextButton(
-                  onPressed: _skipLogin,
-                  child: Text(
-                    'Continuar sin cuenta',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.white54,
-                      decoration: TextDecoration.underline,
                     ),
                   ),
                 ),

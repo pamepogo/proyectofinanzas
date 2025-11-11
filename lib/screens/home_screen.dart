@@ -1,6 +1,7 @@
+// screens/optimized_home_screen.dart
 import 'package:flutter/material.dart';
-import '../models/expense.dart';
-import '../services/expense_service.dart';
+import '../models/transaction.dart';
+import '../services/optimized_transaction_service.dart';
 import '../widgets/expense_list.dart';
 import '../widgets/add_transaction_modal.dart';
 import '../widgets/custom_drawer.dart';
@@ -13,50 +14,65 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final ExpenseService _expenseService = ExpenseService();
-  List<Transaction> _transactions = [];
+  final OptimizedTransactionService _transactionService = OptimizedTransactionService();
+  List<Transaction> _todayTransactions = [];
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _initializeApp();
+    _loadTodayTransactions();
   }
 
-  void _initializeApp() async {
-    await _loadTransactions();
-    setState(() {
-      _isLoading = false;
-    });
-  }
-
-  Future<void> _loadTransactions() async {
+  // ✅ Solo cargar transacciones del día
+  Future<void> _loadTodayTransactions() async {
     try {
-      final transactions = await _expenseService.getTransactions();
+      final transactions = await _transactionService.getTodayTransactions();
       setState(() {
-        _transactions = transactions;
+        _todayTransactions = transactions;
+        _isLoading = false;
       });
     } catch (e) {
-      print('❌ Error cargando transacciones: $e');
+      print('Error cargando transacciones de hoy: $e');
+      setState(() {
+        _isLoading = false;
+      });
+      _showErrorSnackbar('Error cargando transacciones: $e');
     }
+  }
+
+  // ✅ Refresh más rápido
+  Future<void> _refreshData() async {
+    _transactionService.clearCache(); // Limpiar cache
+    await _loadTodayTransactions();
   }
 
   Future<void> _addTransaction(Transaction transaction) async {
     try {
-      await _expenseService.addTransaction(transaction);
-      await _loadTransactions();
+      await _transactionService.addTransaction(transaction);
+      await _refreshData(); // Usar refresh que incluye clear cache
+      
+      _showSuccessSnackbar('Transacción agregada exitosamente');
     } catch (e) {
-      print('❌ Error en _addTransaction: $e');
+      print('Error en _addTransaction: $e');
+      _showErrorSnackbar('Error agregando transacción: $e');
       rethrow;
     }
   }
 
   Future<void> _deleteTransaction(Transaction transaction) async {
     try {
-      await _expenseService.deleteTransaction(transaction.id!);
-      await _loadTransactions();
+      if (transaction.id != null) {
+        await _transactionService.deleteTransaction(transaction.id!);
+        await _refreshData();
+        
+        _showSuccessSnackbar('Transacción eliminada');
+      } else {
+        _showErrorSnackbar('No se puede eliminar: ID no disponible');
+      }
     } catch (e) {
-      print('❌ Error eliminando transacción: $e');
+      print('Error eliminando transacción: $e');
+      _showErrorSnackbar('Error eliminando transacción: $e');
     }
   }
 
@@ -66,18 +82,26 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (context) =>
           AddTransactionModal(onTransactionAdded: _addTransaction),
     ).then((_) {
-      _loadTransactions();
+      _refreshData();
     });
   }
 
-  List<Transaction> get _todayTransactions {
-    final today = DateTime.now();
-    return _transactions
-        .where((transaction) =>
-            transaction.date.year == today.year &&
-            transaction.date.month == today.month &&
-            transaction.date.day == today.day)
-        .toList();
+  void _showErrorSnackbar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+
+  void _showSuccessSnackbar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.green,
+      ),
+    );
   }
 
   @override
@@ -90,16 +114,15 @@ class _HomeScreenState extends State<HomeScreen> {
           // Ya estamos en home, solo cerramos el drawer
         },
         onStatisticsSelected: () {
-          // Navegar a estadísticas - AHORA FUNCIONAL
-          Navigator.pop(context); // Cerrar drawer primero
+          Navigator.pop(context);
           Navigator.pushNamed(context, '/statistics');
         },
         onBalanceSelected: () {
-          Navigator.pop(context); // Cerrar drawer primero
+          Navigator.pop(context);
           Navigator.pushNamed(context, '/balance');
         },
         onSavingsSelected: () {
-          Navigator.pop(context); // Cerrar drawer primero
+          Navigator.pop(context);
           Navigator.pushNamed(context, '/savings');
         },
         onLogoutSelected: _logout,
@@ -123,30 +146,86 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: () => _loadTransactions(),
+            onPressed: _refreshData,
             tooltip: 'Recargar',
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
-              ),
-            )
-          : Container(
-              color: const Color(0xFF0F0F23),
-              child: ExpenseList(
-                transactions: _todayTransactions,
-                onDismissed: _deleteTransaction,
-              ),
-            ),
+      body: RefreshIndicator(
+        onRefresh: _refreshData,
+        backgroundColor: const Color(0xFF6366F1),
+        color: Colors.white,
+        child: _isLoading
+            ? _buildLoading()
+            : _todayTransactions.isEmpty
+                ? _buildEmptyState()
+                : ExpenseList(
+                    transactions: _todayTransactions,
+                    onDismissed: _deleteTransaction,
+                  ),
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _showAddTransactionModal,
         backgroundColor: const Color(0xFF6366F1),
         child: const Icon(Icons.add, color: Colors.white),
       ),
-      // ELIMINADO: Bottom Navigation Bar
+    );
+  }
+
+  Widget _buildLoading() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
+          ),
+          SizedBox(height: 16),
+          Text(
+            'Cargando transacciones...',
+            style: TextStyle(color: Colors.white70),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.receipt_long,
+            size: 80,
+            color: Colors.grey[600],
+          ),
+          SizedBox(height: 16),
+          Text(
+            'No hay transacciones hoy',
+            style: TextStyle(
+              color: Colors.grey[400],
+              fontSize: 18,
+            ),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'Agrega tu primera transacción',
+            style: TextStyle(
+              color: Colors.grey[500],
+            ),
+          ),
+          SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: _showAddTransactionModal,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF6366F1),
+              foregroundColor: Colors.white,
+            ),
+            child: Text('Agregar Transacción'),
+          ),
+        ],
+      ),
     );
   }
 

@@ -1,6 +1,7 @@
+// screens/optimized_statistics_screen.dart
 import 'package:flutter/material.dart';
-import '../models/expense.dart';
-import '../services/expense_service.dart';
+import '../models/transaction.dart';
+import '../services/optimized_transaction_service.dart';
 import '../widgets/custom_drawer.dart';
 import '../widgets/weekly_chart.dart';
 
@@ -12,7 +13,7 @@ class StatisticsScreen extends StatefulWidget {
 }
 
 class _StatisticsScreenState extends State<StatisticsScreen> {
-  final ExpenseService _expenseService = ExpenseService();
+  final OptimizedTransactionService _transactionService = OptimizedTransactionService();
   List<Transaction> _transactions = [];
   bool _isLoading = true;
 
@@ -24,26 +25,45 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
 
   Future<void> _loadData() async {
     try {
-      final transactions = await _expenseService.getTransactions();
+      final transactions = await _transactionService.getTransactionsAsFuture();
       setState(() {
         _transactions = transactions;
         _isLoading = false;
       });
+      
+      // DEBUG: Verificar datos
+      print('📊 Total transacciones cargadas: ${_transactions.length}');
+      print('📅 Rango de fechas:');
+      if (_transactions.isNotEmpty) {
+        _transactions.sort((a, b) => a.date.compareTo(b.date));
+        print('   Más antigua: ${_transactions.first.date}');
+        print('   Más reciente: ${_transactions.last.date}');
+      }
+      
     } catch (e) {
-      print('❌ Error cargando estadísticas: $e');
+      print('Error cargando estadísticas: $e');
       setState(() {
         _isLoading = false;
       });
+      _showErrorSnackbar('Error cargando estadísticas: $e');
     }
   }
 
-  List<Transaction> get _weeklyTransactions {
-    final now = DateTime.now();
-    final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
-    return _transactions
-        .where((transaction) => transaction.date
-            .isAfter(startOfWeek.subtract(const Duration(days: 1))))
-        .toList();
+  Future<void> _refreshData() async {
+    setState(() {
+      _isLoading = true;
+    });
+    _transactionService.clearCache();
+    await _loadData();
+  }
+
+  void _showErrorSnackbar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+      ),
+    );
   }
 
   @override
@@ -69,48 +89,32 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
             onPressed: () => Scaffold.of(context).openDrawer(),
           ),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _refreshData,
+          ),
+        ],
       ),
       body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
-              ),
-            )
-          : Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: _buildIncomeExpenseChart(),
-              ),
-            ),
+          ? _buildLoading()
+          : WeeklyChart(transactions: _transactions), // ✅ Usar directamente WeeklyChart
     );
   }
 
-  Widget _buildIncomeExpenseChart() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E1B4B),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: const Color(0xFF6366F1).withOpacity(0.3),
-        ),
-      ),
+  Widget _buildLoading() {
+    return Center(
       child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Text(
-            'Gastos vs Ingresos de la Semana',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
+          CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
           ),
-          const SizedBox(height: 16),
-          
-          // Gráfico semanal
-          WeeklyChart(transactions: _weeklyTransactions),
+          SizedBox(height: 16),
+          Text(
+            'Cargando estadísticas...',
+            style: TextStyle(color: Colors.white70),
+          ),
         ],
       ),
     );
