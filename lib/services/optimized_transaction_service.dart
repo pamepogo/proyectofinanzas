@@ -1,7 +1,7 @@
 // services/optimized_transaction_service.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../models/transaction.dart' as my_models;
+import '../models/transaction.dart' as my_models; // Usa un alias
 
 class OptimizedTransactionService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -42,6 +42,7 @@ class OptimizedTransactionService {
           type: data['type'] == 'INGRESO' 
               ? my_models.TransactionType.INGRESO 
               : my_models.TransactionType.GASTO,
+          savingGoalId: data['savingGoalId'] as String?,
         );
       }).toList();
 
@@ -103,6 +104,7 @@ class OptimizedTransactionService {
               type: data['type'] == 'INGRESO' 
                   ? my_models.TransactionType.INGRESO 
                   : my_models.TransactionType.GASTO,
+              savingGoalId: data['savingGoalId'] as String?,
             );
           }).toList();
           
@@ -125,6 +127,7 @@ class OptimizedTransactionService {
         'date': Timestamp.fromDate(transaction.date),
         'type': transaction.type == my_models.TransactionType.INGRESO ? 'INGRESO' : 'GASTO',
         'userId': user.uid,
+        'savingGoalId': transaction.savingGoalId,
         'createdAt': FieldValue.serverTimestamp(),
       });
       
@@ -132,6 +135,34 @@ class OptimizedTransactionService {
     } catch (e) {
       print('Error adding transaction: $e');
       rethrow;
+    }
+  }
+
+  // ✅ ACTUALIZAR transacción
+  Future<void> updateTransaction(my_models.Transaction transaction) async {
+    if (transaction.id == null) {
+      throw Exception('Transaction ID is required for update');
+    }
+    
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) throw Exception('Usuario no autenticado');
+      
+      await _firestore.collection(_collectionPath).doc(transaction.id).update({
+        'amount': transaction.amount,
+        'description': transaction.description,
+        'category': transaction.category,
+        'date': Timestamp.fromDate(transaction.date),
+        'type': transaction.type == my_models.TransactionType.INGRESO ? 'INGRESO' : 'GASTO',
+        'userId': user.uid,
+        'savingGoalId': transaction.savingGoalId,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      
+      clearCache();
+    } catch (e) {
+      print('Error updating transaction: $e');
+      throw Exception('Failed to update transaction: $e');
     }
   }
 

@@ -1,3 +1,4 @@
+// widgets/add_transaction_modal.dart
 import 'package:flutter/material.dart';
 import '../models/transaction.dart';
 import '../models/saving_goal.dart';
@@ -5,12 +6,18 @@ import '../services/saving_service.dart';
 
 class AddTransactionModal extends StatefulWidget {
   final Function(Transaction) onTransactionAdded;
+  final Function(Transaction)? onTransactionUpdated;
+  final Transaction? transactionToEdit;
   final SavingService? savingService;
+  final double availableBalance; // Nuevo parámetro agregado
 
   const AddTransactionModal({
     Key? key,
     required this.onTransactionAdded,
+    this.onTransactionUpdated,
+    this.transactionToEdit,
     this.savingService,
+    this.availableBalance = 0, // Valor por defecto
   }) : super(key: key);
 
   @override
@@ -22,37 +29,63 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
   final _amountController = TextEditingController();
   
   TransactionType _selectedType = TransactionType.GASTO;
-  String _selectedCategory = 'Compras';
+  String? _selectedCategory;
   String? _selectedSavingGoalId;
+  // ignore: unused_field
   List<SavingGoal> _savingGoals = [];
+  // ignore: unused_field
   bool _isLoadingGoals = false;
 
-  // Categorías organizadas como en las imágenes
+  // Categorías organizadas como en las imágenes - SIN DUPLICADOS
   final Map<String, List<String>> _categoriesByType = {
     'INGRESOS': [
       'Salario',
       'Jornada reducida',
-      'Efectivo',
-      'Otros'
+      'Ventas',
+      'Renta'
     ],
     'GASTOS': [
       'Transporte',
       'Compras',
-      'Mascota',
-      'Social',
-      'Verduras',
-      'Frutas',
-      'Aperitivos',
-      'Entretenimiento',
+      'Mascotas',
+      'Limpieza',
+      'Vestimenta',
+      'Zapatos',
+      'Salud',
+      'Mercado',
       'Vivienda',
       'Cosmético',
+      'Higiene'
     ]
   };
+
+  bool get _isEditing => widget.transactionToEdit != null;
 
   @override
   void initState() {
     super.initState();
+    // Establecer categoría por defecto basada en el tipo
+    _selectedCategory = _getCurrentCategories().first;
+    
+    if (_isEditing) {
+      _initializeWithTransactionData();
+    }
     _loadSavingGoals();
+  }
+
+  void _initializeWithTransactionData() {
+    final transaction = widget.transactionToEdit!;
+    _descriptionController.text = transaction.description;
+    _amountController.text = transaction.amount.toStringAsFixed(2);
+    _selectedType = transaction.type;
+    _selectedCategory = transaction.category;
+    _selectedSavingGoalId = transaction.savingGoalId;
+    
+    // Verificar que la categoría exista en la lista actual
+    final currentCategories = _getCurrentCategories();
+    if (!currentCategories.contains(_selectedCategory)) {
+      _selectedCategory = currentCategories.first;
+    }
   }
 
   Future<void> _loadSavingGoals() async {
@@ -78,6 +111,8 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
 
   @override
   Widget build(BuildContext context) {
+    final currentCategories = _getCurrentCategories();
+    
     return Dialog(
       backgroundColor: const Color(0xFF1E1B4B),
       shape: RoundedRectangleBorder(
@@ -89,9 +124,9 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Nueva Transacción',
-              style: TextStyle(
+            Text(
+              _isEditing ? 'Editar Transacción' : 'Nueva Transacción',
+              style: const TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
@@ -99,7 +134,63 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
             ),
             const SizedBox(height: 20),
 
-            // Selector de Tipo (Ingreso/Gasto)
+            // Indicador de saldo disponible (solo para gastos)
+            if (_selectedType == TransactionType.GASTO && !_isEditing) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F0F23),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: widget.availableBalance >= 0 
+                        ? const Color(0xFF10B981).withOpacity(0.3)
+                        : const Color(0xFFEC4899).withOpacity(0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      widget.availableBalance >= 0 ? Icons.info : Icons.warning,
+                      color: widget.availableBalance >= 0 
+                          ? const Color(0xFF10B981)
+                          : const Color(0xFFEC4899),
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.availableBalance >= 0 
+                                ? 'Saldo disponible'
+                                : 'Saldo negativo',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            '\$${widget.availableBalance.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              color: widget.availableBalance >= 0 
+                                  ? const Color(0xFF10B981)
+                                  : const Color(0xFFEC4899),
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // Selector de Tipo (Ingreso/Gasto) - Solo lectura en edición
             Container(
               decoration: BoxDecoration(
                 color: const Color(0xFF0F0F23),
@@ -167,7 +258,7 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
             ),
             const SizedBox(height: 16),
 
-            // Categoría COMO DROPDOWN
+            // Categoría COMO DROPDOWN - CON VALIDACIÓN
             DropdownButtonFormField<String>(
               value: _selectedCategory,
               decoration: InputDecoration(
@@ -186,7 +277,7 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
               dropdownColor: const Color(0xFF1E1B4B),
               style: const TextStyle(color: Colors.white),
               icon: const Icon(Icons.arrow_drop_down, color: Colors.white70),
-              items: _getCurrentCategories().map((category) {
+              items: currentCategories.map((category) {
                 return DropdownMenuItem(
                   value: category,
                   child: Text(category),
@@ -194,91 +285,11 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
               }).toList(),
               onChanged: (value) {
                 setState(() {
-                  _selectedCategory = value!;
+                  _selectedCategory = value;
                 });
               },
             ),
             const SizedBox(height: 16),
-
-            // Selector de Meta de Ahorro (solo para ingresos) - COMO DROPDOWN
-            if (_selectedType == TransactionType.INGRESO && widget.savingService != null) ...[
-              _isLoadingGoals
-                  ? const CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
-                    )
-                  : DropdownButtonFormField<String>(
-                      value: _selectedSavingGoalId,
-                      decoration: InputDecoration(
-                        labelText: 'Asignar a meta de ahorro',
-                        labelStyle: const TextStyle(color: Colors.white70),
-                        border: const OutlineInputBorder(),
-                        enabledBorder: const OutlineInputBorder(
-                          borderSide: BorderSide(color: Color(0xFF6366F1)),
-                        ),
-                        focusedBorder: const OutlineInputBorder(
-                          borderSide: BorderSide(color: Color(0xFF8B5CF6)),
-                        ),
-                        filled: true,
-                        fillColor: const Color(0xFF0F0F23),
-                      ),
-                      dropdownColor: const Color(0xFF1E1B4B),
-                      style: const TextStyle(color: Colors.white),
-                      icon: const Icon(Icons.arrow_drop_down, color: Colors.white70),
-                      items: [
-                        DropdownMenuItem(
-                          value: null,
-                          child: Text(
-                            'No asignar',
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontStyle: FontStyle.italic,
-                            ),
-                          ),
-                        ),
-                        ..._savingGoals.map((goal) {
-                          return DropdownMenuItem(
-                            value: goal.id,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  goal.name,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Progreso: \$${goal.currentAmount.toStringAsFixed(0)} / \$${goal.targetAmount.toStringAsFixed(0)}',
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                      ],
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedSavingGoalId = value;
-                        });
-                      },
-                    ),
-              const SizedBox(height: 8),
-              if (_savingGoals.isEmpty && !_isLoadingGoals)
-                const Text(
-                  'No tienes metas de ahorro. Crea una en la pantalla de Ahorro.',
-                  style: TextStyle(
-                    color: Colors.white60,
-                    fontSize: 12,
-                  ),
-                ),
-              const SizedBox(height: 16),
-            ],
 
             // Botones de acción
             Row(
@@ -297,13 +308,13 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: _addTransaction,
+                    onPressed: _submitForm,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF6366F1),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
-                    child: const Text('Agregar'),
+                    child: Text(_isEditing ? 'Actualizar' : 'Agregar'),
                   ),
                 ),
               ],
@@ -324,10 +335,10 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
     final isSelected = _selectedType == type;
     
     return GestureDetector(
-      onTap: () {
+      onTap: _isEditing ? null : () { // Deshabilitar cambio de tipo en edición
         setState(() {
           _selectedType = type;
-          // Resetear categoría y selección de meta si cambia el tipo
+          // Resetear categoría basada en el nuevo tipo
           _selectedCategory = _getCurrentCategories().first;
           if (type == TransactionType.GASTO) {
             _selectedSavingGoalId = null;
@@ -365,11 +376,11 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
     );
   }
 
-  void _addTransaction() {
+  void _submitForm() {
     final description = _descriptionController.text.trim();
     final amount = double.tryParse(_amountController.text) ?? 0;
 
-    if (description.isEmpty || amount <= 0) {
+    if (description.isEmpty || amount <= 0 || _selectedCategory == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Por favor, completa todos los campos'),
@@ -379,25 +390,49 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
       return;
     }
 
+    // Validar si es gasto y supera el saldo disponible (solo para nuevos gastos)
+    if (!_isEditing && 
+        _selectedType == TransactionType.GASTO && 
+        amount > widget.availableBalance) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Saldo insuficiente. Disponible: \$${widget.availableBalance.toStringAsFixed(2)}',
+          ),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
     final transaction = Transaction(
+      id: _isEditing ? widget.transactionToEdit!.id : null,
       description: description,
       amount: amount,
-      date: DateTime.now(),
-      category: _selectedCategory,
+      date: _isEditing ? widget.transactionToEdit!.date : DateTime.now(),
+      category: _selectedCategory!,
       type: _selectedType,
       savingGoalId: _selectedSavingGoalId,
     );
 
-    widget.onTransactionAdded(transaction);
+    if (_isEditing) {
+      widget.onTransactionUpdated?.call(transaction);
+    } else {
+      widget.onTransactionAdded(transaction);
+    }
+
     Navigator.pop(context);
 
     // Mostrar mensaje de confirmación
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          _selectedSavingGoalId != null 
-            ? 'Transacción agregada y asignada a meta de ahorro'
-            : 'Transacción agregada exitosamente',
+          _isEditing 
+            ? 'Transacción actualizada exitosamente'
+            : _selectedSavingGoalId != null 
+                ? 'Transacción agregada y asignada a meta de ahorro'
+                : 'Transacción agregada exitosamente',
         ),
         backgroundColor: const Color(0xFF10B981),
       ),
