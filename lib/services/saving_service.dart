@@ -1,171 +1,336 @@
-// services/saving_service.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/saving_goal.dart';
+import './optimized_transaction_service.dart';
 import '../models/transaction.dart' as my_models;
-import 'optimized_transaction_service.dart';
 
 class SavingService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final OptimizedTransactionService _transactionService;
+  final CollectionReference _savingsCollection =
+      FirebaseFirestore.instance.collection('saving_goals');
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
   SavingService(this._transactionService);
 
-  // ✅ CONSULTA SIMPLE para metas
-  Future<List<SavingGoal>> getSavingGoals() async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return [];
+  String? get _currentUserId => _auth.currentUser?.uid;
 
-      // SOLO filtrar por usuario - sin ordenamiento complejo
-      final snapshot = await _firestore
-          .collection('saving_goals')
-          .where('userId', isEqualTo: user.uid)
-          .get();
-      
-      final goals = snapshot.docs.map((doc) => SavingGoal.fromFirestore(doc)).toList();
-      
-      // Ordenar en memoria por fecha de creación
-      goals.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      
-      return goals;
-    } catch (e) {
-      print('Error obteniendo metas de ahorro: $e');
-      throw e;
+  void _checkAuthentication() {
+    if (_currentUserId == null) {
+      throw Exception('Usuario no autenticado. Inicia sesión nuevamente.');
     }
   }
 
-  // ✅ STREAM simple para metas
-  Stream<List<SavingGoal>> getSavingGoalsStream() {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return Stream.value([]);
-
-    return _firestore
-        .collection('saving_goals')
-        .where('userId', isEqualTo: user.uid)
-        .snapshots()
-        .map((snapshot) {
-          final goals = snapshot.docs.map((doc) => SavingGoal.fromFirestore(doc)).toList();
-          goals.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-          return goals;
-        });
-  }
-
-  // ✅ CREAR meta
   Future<void> createSavingGoal(SavingGoal goal) async {
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) throw Exception('Usuario no autenticado');
+      _checkAuthentication();
+      final userId = _currentUserId!;
+
+      final docRef = _savingsCollection.doc();
+      final goalWithId = goal.copyWith(
+        id: docRef.id,
+        userId: userId,
+      );
       
-      await _firestore.collection('saving_goals').add({
-        'name': goal.name,
-        'description': goal.description,
-        'targetAmount': goal.targetAmount,
-        'currentAmount': goal.currentAmount,
-        'targetDate': Timestamp.fromDate(goal.targetDate),
-        'createdAt': Timestamp.fromDate(goal.createdAt),
-        'icon': goal.icon,
-        'userId': user.uid,
-      });
+      await docRef.set(goalWithId.toMap());
     } catch (e) {
-      print('Error creando meta de ahorro: $e');
-      throw e;
+      print('Error en createSavingGoal: $e');
+      rethrow;
     }
   }
 
-  // ✅ ACTUALIZAR meta
-  Future<void> updateSavingGoal(SavingGoal updatedGoal) async {
+  Future<List<SavingGoal>> getSavingGoals() async {
     try {
-      await _firestore.collection('saving_goals').doc(updatedGoal.id).update({
-        'name': updatedGoal.name,
-        'description': updatedGoal.description,
-        'targetAmount': updatedGoal.targetAmount,
-        'targetDate': Timestamp.fromDate(updatedGoal.targetDate),
-        'icon': updatedGoal.icon,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      _checkAuthentication();
+      final userId = _currentUserId!;
+
+      // SOLUCIÓN TEMPORAL: Obtener sin ordenar para evitar el índice
+      final querySnapshot = await _savingsCollection
+          .where('userId', isEqualTo: userId)
+          .get();
+
+      // Ordenar localmente
+      final goals = querySnapshot.docs
+          .map((doc) => SavingGoal.fromMap(doc.data() as Map<String, dynamic>, doc.id))
+          .toList();
+
+      goals.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return goals;
     } catch (e) {
-      print('Error actualizando meta: $e');
-      throw e;
+      print('Error en getSavingGoals: $e');
+      rethrow;
     }
   }
 
-  // ✅ AGREGAR dinero a meta
+  Future<SavingGoal?> getSavingGoal(String id) async {
+    try {
+      _checkAuthentication();
+      final userId = _currentUserId!;
+
+      final doc = await _savingsCollection.doc(id).get();
+      if (doc.exists) {
+        final goal = SavingGoal.fromMap(doc.data() as Map<String, dynamic>, doc.id);
+        if (goal.userId == userId) {
+          return goal;
+        } else {
+          throw Exception('No tienes permisos para acceder a esta meta');
+        }
+      }
+      return null;
+    } catch (e) {
+      print('Error en getSavingGoal: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> updateSavingGoal(SavingGoal goal) async {
+    try {
+      _checkAuthentication();
+      
+      if (goal.id == null) {
+        throw Exception('No se puede actualizar: ID no disponible');
+      }
+
+      final userId = _currentUserId!;
+
+      final existingGoal = await getSavingGoal(goal.id!);
+      if (existingGoal == null) {
+        throw Exception('Meta no encontrada o no tienes permisos');
+      }
+      
+      await _savingsCollection.doc(goal.id!).update(goal.toMap());
+    } catch (e) {
+      print('Error en updateSavingGoal: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> deleteSavingGoal(String id) async {
+    try {
+      _checkAuthentication();
+      final userId = _currentUserId!;
+
+      final goal = await getSavingGoal(id);
+      if (goal == null) {
+        throw Exception('Meta no encontrada o no tienes permisos');
+      }
+
+      await _savingsCollection.doc(id).delete();
+    } catch (e) {
+      print('Error en deleteSavingGoal: $e');
+      rethrow;
+    }
+  }
+
   Future<void> addToSavingGoal(String goalId, double amount) async {
     try {
-      final goal = await getGoalById(goalId);
-      if (goal != null) {
-        final newAmount = goal.currentAmount + amount;
-        await _firestore.collection('saving_goals').doc(goalId).update({
-          'currentAmount': newAmount,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-
-        // Crear transacción de ahorro
-        await _transactionService.addTransaction(
-          my_models.Transaction(
-            amount: amount,
-            description: 'Aporte a meta: ${goal.name}',
-            category: 'Ahorro',
-            date: DateTime.now(),
-            type: my_models.TransactionType.GASTO,
-          ),
-        );
+      _checkAuthentication();
+      
+      if (amount <= 0) {
+        throw Exception('La cantidad debe ser mayor a cero');
       }
+
+      final goal = await getSavingGoal(goalId);
+      if (goal == null) throw Exception('Meta no encontrada');
+
+      final updatedGoal = goal.copyWith(
+        currentAmount: goal.currentAmount + amount,
+      );
+
+      await updateSavingGoal(updatedGoal);
     } catch (e) {
-      print('Error agregando dinero a meta: $e');
-      throw e;
+      print('Error en addToSavingGoal: $e');
+      rethrow;
     }
   }
 
-  // ✅ ELIMINAR meta
-  Future<void> deleteSavingGoal(String goalId) async {
+  Future<void> withdrawFromSavingGoal(String goalId, double amount) async {
     try {
-      await _firestore.collection('saving_goals').doc(goalId).delete();
+      _checkAuthentication();
+      
+      if (amount <= 0) {
+        throw Exception('La cantidad debe ser mayor a cero');
+      }
+
+      final goal = await getSavingGoal(goalId);
+      if (goal == null) throw Exception('Meta no encontrada');
+
+      if (goal.currentAmount < amount) {
+        throw Exception('Saldo insuficiente en la meta. Disponible: \$${goal.currentAmount.toStringAsFixed(2)}');
+      }
+
+      final updatedGoal = goal.copyWith(
+        currentAmount: goal.currentAmount - amount,
+      );
+
+      await updateSavingGoal(updatedGoal);
     } catch (e) {
-      print('Error eliminando meta de ahorro: $e');
-      throw e;
+      print('Error en withdrawFromSavingGoal: $e');
+      rethrow;
     }
   }
 
-  // ✅ OBTENER meta por ID
-  Future<SavingGoal?> getGoalById(String goalId) async {
+  Future<void> transferToSavingGoal(String goalId, double amount, String description) async {
     try {
-      final doc = await _firestore.collection('saving_goals').doc(goalId).get();
-      return doc.exists ? SavingGoal.fromFirestore(doc) : null;
+      _checkAuthentication();
+      
+      if (amount <= 0) {
+        throw Exception('La cantidad debe ser mayor a cero');
+      }
+
+      final goal = await getSavingGoal(goalId);
+      if (goal == null) throw Exception('Meta no encontrada');
+
+      final incomeTransaction = my_models.Transaction(
+        description: description.isEmpty ? 'Transferencia a ${goal.name}' : description,
+        amount: amount,
+        date: DateTime.now(),
+        category: 'Transferencia a Ahorro',
+        type: my_models.TransactionType.INGRESO,
+      );
+
+      await _transactionService.addTransaction(incomeTransaction);
+      await addToSavingGoal(goalId, amount);
     } catch (e) {
-      print('Error obteniendo meta por ID: $e');
-      return null;
+      print('Error en transferToSavingGoal: $e');
+      rethrow;
     }
   }
 
-  // ✅ MÉTODOS ADICIONALES
-  Future<double> getTotalSaved() async {
+  Future<Map<String, dynamic>> getSavingsSummary() async {
     try {
-      final List<SavingGoal> goals = await getSavingGoals();
-      double total = 0.0;
+      _checkAuthentication();
+      
+      final goals = await getSavingGoals();
+      
+      double totalTarget = 0;
+      double totalCurrent = 0;
+      int completedGoals = 0;
+      int activeGoals = 0;
+
       for (final goal in goals) {
-        total += goal.currentAmount;
+        totalTarget += goal.targetAmount;
+        totalCurrent += goal.currentAmount;
+        
+        if (goal.currentAmount >= goal.targetAmount) {
+          completedGoals++;
+        } else {
+          activeGoals++;
+        }
       }
-      return total;
+
+      final totalProgress = totalTarget > 0 ? totalCurrent / totalTarget : 0.0;
+
+      return {
+        'totalGoals': goals.length,
+        'completedGoals': completedGoals,
+        'activeGoals': activeGoals,
+        'totalTarget': totalTarget,
+        'totalCurrent': totalCurrent,
+        'totalProgress': totalProgress,
+        'remainingAmount': totalTarget - totalCurrent,
+      };
     } catch (e) {
-      print('Error calculando total ahorrado: $e');
-      return 0.0;
+      print('Error en getSavingsSummary: $e');
+      rethrow;
     }
   }
 
   Future<List<SavingGoal>> getUpcomingGoals() async {
     try {
-      final List<SavingGoal> goals = await getSavingGoals();
-      goals.sort((a, b) {
-        final progressA = a.targetAmount > 0 ? a.currentAmount / a.targetAmount : 0;
-        final progressB = b.targetAmount > 0 ? b.currentAmount / b.targetAmount : 0;
-        return progressB.compareTo(progressA);
-      });
-      return goals.take(3).toList();
+      _checkAuthentication();
+      
+      final goals = await getSavingGoals();
+      final now = DateTime.now();
+      final threshold = now.add(const Duration(days: 30));
+
+      return goals.where((goal) {
+        return goal.targetDate.isBefore(threshold) && 
+               goal.currentAmount < goal.targetAmount;
+      }).toList();
     } catch (e) {
-      print('Error obteniendo metas próximas: $e');
-      return [];
+      print('Error en getUpcomingGoals: $e');
+      rethrow;
+    }
+  }
+
+  Future<List<SavingGoal>> getCompletedGoals() async {
+    try {
+      _checkAuthentication();
+      
+      final goals = await getSavingGoals();
+      return goals.where((goal) => goal.currentAmount >= goal.targetAmount).toList();
+    } catch (e) {
+      print('Error en getCompletedGoals: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> resetSavingGoal(String goalId) async {
+    try {
+      _checkAuthentication();
+      
+      final goal = await getSavingGoal(goalId);
+      if (goal == null) throw Exception('Meta no encontrada');
+
+      final resetGoal = goal.copyWith(
+        currentAmount: 0,
+        createdAt: DateTime.now(),
+      );
+
+      await updateSavingGoal(resetGoal);
+    } catch (e) {
+      print('Error en resetSavingGoal: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> adjustTargetAmount(String goalId, double newTargetAmount) async {
+    try {
+      _checkAuthentication();
+      
+      if (newTargetAmount <= 0) {
+        throw Exception('El monto objetivo debe ser mayor a cero');
+      }
+
+      final goal = await getSavingGoal(goalId);
+      if (goal == null) throw Exception('Meta no encontrada');
+
+      final updatedGoal = goal.copyWith(
+        targetAmount: newTargetAmount,
+      );
+
+      await updateSavingGoal(updatedGoal);
+    } catch (e) {
+      print('Error en adjustTargetAmount: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> migrateExistingGoals() async {
+    try {
+      _checkAuthentication();
+      final userId = _currentUserId!;
+
+      final querySnapshot = await _savingsCollection
+          .where('userId', isNull: true)
+          .get();
+
+      if (querySnapshot.docs.isEmpty) {
+        print('No hay metas para migrar');
+        return;
+      }
+
+      final batch = FirebaseFirestore.instance.batch();
+
+      for (final doc in querySnapshot.docs) {
+        batch.update(doc.reference, {'userId': userId});
+      }
+
+      await batch.commit();
+      print('${querySnapshot.docs.length} metas migradas exitosamente para el usuario $userId');
+    } catch (e) {
+      print('Error migrando metas: $e');
+      rethrow;
     }
   }
 }

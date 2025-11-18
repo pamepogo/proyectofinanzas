@@ -1,23 +1,19 @@
 // widgets/add_transaction_modal.dart
 import 'package:flutter/material.dart';
 import '../models/transaction.dart';
-import '../models/saving_goal.dart';
-import '../services/saving_service.dart';
 
 class AddTransactionModal extends StatefulWidget {
   final Function(Transaction) onTransactionAdded;
   final Function(Transaction)? onTransactionUpdated;
   final Transaction? transactionToEdit;
-  final SavingService? savingService;
-  final double availableBalance; // Nuevo parámetro agregado
+  final double availableBalance;
 
   const AddTransactionModal({
     Key? key,
     required this.onTransactionAdded,
     this.onTransactionUpdated,
     this.transactionToEdit,
-    this.savingService,
-    this.availableBalance = 0, // Valor por defecto
+    this.availableBalance = 0,
   }) : super(key: key);
 
   @override
@@ -30,11 +26,6 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
   
   TransactionType _selectedType = TransactionType.GASTO;
   String? _selectedCategory;
-  String? _selectedSavingGoalId;
-  // ignore: unused_field
-  List<SavingGoal> _savingGoals = [];
-  // ignore: unused_field
-  bool _isLoadingGoals = false;
 
   // Categorías organizadas como en las imágenes - SIN DUPLICADOS
   final Map<String, List<String>> _categoriesByType = {
@@ -70,7 +61,6 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
     if (_isEditing) {
       _initializeWithTransactionData();
     }
-    _loadSavingGoals();
   }
 
   void _initializeWithTransactionData() {
@@ -79,33 +69,11 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
     _amountController.text = transaction.amount.toStringAsFixed(2);
     _selectedType = transaction.type;
     _selectedCategory = transaction.category;
-    _selectedSavingGoalId = transaction.savingGoalId;
     
     // Verificar que la categoría exista en la lista actual
     final currentCategories = _getCurrentCategories();
     if (!currentCategories.contains(_selectedCategory)) {
       _selectedCategory = currentCategories.first;
-    }
-  }
-
-  Future<void> _loadSavingGoals() async {
-    if (widget.savingService == null) return;
-    
-    setState(() {
-      _isLoadingGoals = true;
-    });
-
-    try {
-      final goals = await widget.savingService!.getSavingGoals();
-      setState(() {
-        _savingGoals = goals;
-        _isLoadingGoals = false;
-      });
-    } catch (e) {
-      print('Error cargando metas de ahorro: $e');
-      setState(() {
-        _isLoadingGoals = false;
-      });
     }
   }
 
@@ -124,17 +92,27 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              _isEditing ? 'Editar Transacción' : 'Nueva Transacción',
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
+            // Header
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  _isEditing ? 'Editar Transacción' : 'Nueva Transacción',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white70),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
             ),
             const SizedBox(height: 20),
 
-            // Indicador de saldo disponible (solo para gastos)
+            // Indicador de saldo disponible (solo para gastos y no en edición)
             if (_selectedType == TransactionType.GASTO && !_isEditing) ...[
               Container(
                 padding: const EdgeInsets.all(12),
@@ -165,7 +143,7 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
                             widget.availableBalance >= 0 
                                 ? 'Saldo disponible'
                                 : 'Saldo negativo',
-                            style: TextStyle(
+                            style: const TextStyle(
                               color: Colors.white,
                               fontSize: 14,
                               fontWeight: FontWeight.bold,
@@ -190,7 +168,7 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
               const SizedBox(height: 16),
             ],
 
-            // Selector de Tipo (Ingreso/Gasto) - Solo lectura en edición
+            // Selector de Tipo (Ingreso/Gasto)
             Container(
               decoration: BoxDecoration(
                 color: const Color(0xFF0F0F23),
@@ -233,8 +211,11 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
                 focusedBorder: OutlineInputBorder(
                   borderSide: BorderSide(color: Color(0xFF8B5CF6)),
                 ),
+                filled: true,
+                fillColor: Color(0xFF0F0F23),
               ),
               style: const TextStyle(color: Colors.white),
+              textCapitalization: TextCapitalization.sentences,
             ),
             const SizedBox(height: 16),
 
@@ -253,26 +234,28 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
                 focusedBorder: OutlineInputBorder(
                   borderSide: BorderSide(color: Color(0xFF8B5CF6)),
                 ),
+                filled: true,
+                fillColor: Color(0xFF0F0F23),
               ),
               style: const TextStyle(color: Colors.white),
             ),
             const SizedBox(height: 16),
 
-            // Categoría COMO DROPDOWN - CON VALIDACIÓN
+            // Categoría
             DropdownButtonFormField<String>(
               value: _selectedCategory,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Categoría',
-                labelStyle: const TextStyle(color: Colors.white70),
-                border: const OutlineInputBorder(),
-                enabledBorder: const OutlineInputBorder(
+                labelStyle: TextStyle(color: Colors.white70),
+                border: OutlineInputBorder(),
+                enabledBorder: OutlineInputBorder(
                   borderSide: BorderSide(color: Color(0xFF6366F1)),
                 ),
-                focusedBorder: const OutlineInputBorder(
+                focusedBorder: OutlineInputBorder(
                   borderSide: BorderSide(color: Color(0xFF8B5CF6)),
                 ),
                 filled: true,
-                fillColor: const Color(0xFF0F0F23),
+                fillColor: Color(0xFF0F0F23),
               ),
               dropdownColor: const Color(0xFF1E1B4B),
               style: const TextStyle(color: Colors.white),
@@ -289,7 +272,7 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
                 });
               },
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
 
             // Botones de acción
             Row(
@@ -300,9 +283,15 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: const Color(0xFF6366F1),
                       side: const BorderSide(color: Color(0xFF6366F1)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
-                    child: const Text('Cancelar'),
+                    child: const Text(
+                      'Cancelar',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -312,9 +301,15 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF6366F1),
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
-                    child: Text(_isEditing ? 'Actualizar' : 'Agregar'),
+                    child: Text(
+                      _isEditing ? 'Actualizar' : 'Agregar',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
                   ),
                 ),
               ],
@@ -335,18 +330,16 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
     final isSelected = _selectedType == type;
     
     return GestureDetector(
-      onTap: _isEditing ? null : () { // Deshabilitar cambio de tipo en edición
+      onTap: _isEditing ? null : () {
         setState(() {
           _selectedType = type;
           // Resetear categoría basada en el nuevo tipo
           _selectedCategory = _getCurrentCategories().first;
-          if (type == TransactionType.GASTO) {
-            _selectedSavingGoalId = null;
-          }
         });
       },
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 16),
         decoration: BoxDecoration(
           color: isSelected ? color.withOpacity(0.2) : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
@@ -360,14 +353,15 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
             Icon(
               type == TransactionType.INGRESO ? Icons.arrow_upward : Icons.arrow_downward,
               color: isSelected ? color : Colors.white54,
-              size: 20,
+              size: 24,
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 8),
             Text(
               label,
               style: TextStyle(
                 color: isSelected ? color : Colors.white54,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                fontSize: 14,
               ),
             ),
           ],
@@ -380,13 +374,19 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
     final description = _descriptionController.text.trim();
     final amount = double.tryParse(_amountController.text) ?? 0;
 
-    if (description.isEmpty || amount <= 0 || _selectedCategory == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Por favor, completa todos los campos'),
-          backgroundColor: Color(0xFFEC4899),
-        ),
-      );
+    // Validaciones
+    if (description.isEmpty) {
+      _showErrorSnackbar('Por favor, ingresa una descripción');
+      return;
+    }
+
+    if (amount <= 0) {
+      _showErrorSnackbar('El monto debe ser mayor a cero');
+      return;
+    }
+
+    if (_selectedCategory == null) {
+      _showErrorSnackbar('Por favor, selecciona una categoría');
       return;
     }
 
@@ -394,18 +394,13 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
     if (!_isEditing && 
         _selectedType == TransactionType.GASTO && 
         amount > widget.availableBalance) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Saldo insuficiente. Disponible: \$${widget.availableBalance.toStringAsFixed(2)}',
-          ),
-          backgroundColor: Colors.orange,
-          duration: const Duration(seconds: 3),
-        ),
+      _showErrorSnackbar(
+        'Saldo insuficiente. Disponible: \$${widget.availableBalance.toStringAsFixed(2)}'
       );
       return;
     }
 
+    // Crear la transacción
     final transaction = Transaction(
       id: _isEditing ? widget.transactionToEdit!.id : null,
       description: description,
@@ -413,9 +408,10 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
       date: _isEditing ? widget.transactionToEdit!.date : DateTime.now(),
       category: _selectedCategory!,
       type: _selectedType,
-      savingGoalId: _selectedSavingGoalId,
+      // savingGoalId se elimina completamente
     );
 
+    // Ejecutar la acción correspondiente
     if (_isEditing) {
       widget.onTransactionUpdated?.call(transaction);
     } else {
@@ -425,16 +421,35 @@ class _AddTransactionModalState extends State<AddTransactionModal> {
     Navigator.pop(context);
 
     // Mostrar mensaje de confirmación
+    _showSuccessSnackbar(
+      _isEditing 
+        ? 'Transacción actualizada exitosamente'
+        : 'Transacción agregada exitosamente'
+    );
+  }
+
+  void _showErrorSnackbar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          _isEditing 
-            ? 'Transacción actualizada exitosamente'
-            : _selectedSavingGoalId != null 
-                ? 'Transacción agregada y asignada a meta de ahorro'
-                : 'Transacción agregada exitosamente',
+        content: Text(message),
+        backgroundColor: const Color(0xFFEC4899),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
         ),
+      ),
+    );
+  }
+
+  void _showSuccessSnackbar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
         backgroundColor: const Color(0xFF10B981),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
       ),
     );
   }

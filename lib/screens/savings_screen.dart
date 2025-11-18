@@ -1,4 +1,3 @@
-// screens/savings_screen.dart
 import 'package:flutter/material.dart';
 import '../models/saving_goal.dart';
 import '../services/saving_service.dart';
@@ -73,15 +72,27 @@ class _SavingsScreenState extends State<SavingsScreen> {
     }
   }
 
-  Future<void> _addToSavingGoal(String goalId, double amount) async {
+  Future<void> _addToSavingGoal(SavingGoal goal, double amount) async {
     try {
-      await _savingService.addToSavingGoal(goalId, amount);
+      await _savingService.addToSavingGoal(goal.id!, amount);
       await _refreshData();
       
-      _showSuccessSnackbar('\$${amount.toStringAsFixed(2)} agregado a la meta');
+      _showSuccessSnackbar('\$${amount.toStringAsFixed(2)} agregado a ${goal.name}');
     } catch (e) {
       print('Error agregando dinero: $e');
       _showErrorSnackbar('Error agregando dinero: $e');
+    }
+  }
+
+  Future<void> _withdrawFromSavingGoal(SavingGoal goal, double amount) async {
+    try {
+      await _savingService.withdrawFromSavingGoal(goal.id!, amount);
+      await _refreshData();
+      
+      _showSuccessSnackbar('\$${amount.toStringAsFixed(2)} retirado de ${goal.name}');
+    } catch (e) {
+      print('Error retirando dinero: $e');
+      _showErrorSnackbar('Error retirando dinero: $e');
     }
   }
 
@@ -111,6 +122,172 @@ class _SavingsScreenState extends State<SavingsScreen> {
       SnackBar(
         content: Text(message),
         backgroundColor: Colors.green,
+      ),
+    );
+  }
+
+  void _showAddMoneyDialog(SavingGoal goal) {
+    final amountController = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1B4B),
+        title: Text(
+          'Agregar a ${goal.name}',
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Meta: \$${goal.targetAmount.toStringAsFixed(2)}',
+              style: const TextStyle(
+                color: Colors.white70,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Ahorrado: \$${goal.currentAmount.toStringAsFixed(2)}',
+              style: const TextStyle(
+                color: Color(0xFF10B981),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: amountController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Cantidad a ahorrar',
+                labelStyle: TextStyle(color: Colors.white70),
+                prefixText: '\$',
+                border: OutlineInputBorder(),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Color(0xFF6366F1)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Color(0xFF8B5CF6)),
+                ),
+              ),
+              style: const TextStyle(color: Colors.white),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Faltan: \$${(goal.targetAmount - goal.currentAmount).toStringAsFixed(2)}',
+              style: const TextStyle(
+                color: Colors.orange,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              'Cancelar',
+              style: TextStyle(color: Color(0xFF6366F1)),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              final amount = double.tryParse(amountController.text) ?? 0;
+              if (amount > 0) {
+                _addToSavingGoal(goal, amount);
+                Navigator.pop(context);
+              } else {
+                _showErrorSnackbar('Ingresa una cantidad válida mayor a cero');
+              }
+            },
+            child: const Text(
+              'Ahorrar',
+              style: TextStyle(color: Color(0xFF10B981)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showWithdrawDialog(SavingGoal goal) {
+    final amountController = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1B4B),
+        title: Text(
+          'Retirar de ${goal.name}',
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Ahorro actual: \$${goal.currentAmount.toStringAsFixed(2)}',
+              style: const TextStyle(
+                color: Color(0xFF10B981),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              '⚠️ Solo retira si realmente lo necesitas',
+              style: TextStyle(
+                color: Colors.orange,
+                fontSize: 12,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: amountController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Cantidad a retirar',
+                labelStyle: TextStyle(color: Colors.white70),
+                prefixText: '\$',
+                border: OutlineInputBorder(),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Color(0xFF6366F1)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Color(0xFF8B5CF6)),
+                ),
+              ),
+              style: const TextStyle(color: Colors.white),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              'Cancelar',
+              style: TextStyle(color: Color(0xFF6366F1)),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              final amount = double.tryParse(amountController.text) ?? 0;
+              if (amount > 0) {
+                if (amount <= goal.currentAmount) {
+                  _withdrawFromSavingGoal(goal, amount);
+                  Navigator.pop(context);
+                } else {
+                  _showErrorSnackbar('No puedes retirar más de lo que tienes ahorrado');
+                }
+              } else {
+                _showErrorSnackbar('Ingresa una cantidad válida mayor a cero');
+              }
+            },
+            child: const Text(
+              'Retirar',
+              style: TextStyle(color: Color(0xFFEC4899)),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -229,6 +406,8 @@ class _SavingsScreenState extends State<SavingsScreen> {
   Widget _buildGoalCard(SavingGoal goal) {
     final progress = goal.targetAmount > 0 ? goal.currentAmount / goal.targetAmount : 0.0;
     final daysRemaining = goal.targetDate.difference(DateTime.now()).inDays;
+    final isCompleted = goal.currentAmount >= goal.targetAmount;
+    final remainingAmount = goal.targetAmount - goal.currentAmount;
 
     return Card(
       color: const Color(0xFF1E1B4B),
@@ -267,39 +446,53 @@ class _SavingsScreenState extends State<SavingsScreen> {
                     ],
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.add, color: Color(0xFF10B981)),
-                  onPressed: () => _showAddMoneyDialog(goal),
-                  tooltip: 'Agregar dinero',
-                ),
+                if (isCompleted)
+                  const Icon(
+                    Icons.check_circle,
+                    color: Color(0xFF10B981),
+                    size: 24,
+                  ),
               ],
             ),
             const SizedBox(height: 16),
             
-            // Barra de progreso
             LinearProgressIndicator(
               value: progress.clamp(0.0, 1.0),
               backgroundColor: Colors.grey[800],
-              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF10B981)),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                isCompleted ? const Color(0xFF10B981) : const Color(0xFF6366F1)
+              ),
               minHeight: 8,
               borderRadius: BorderRadius.circular(4),
             ),
             const SizedBox(height: 8),
             
-            // Información de progreso
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  '\$${goal.currentAmount.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF10B981),
-                  ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Ahorrado: \$${goal.currentAmount.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: isCompleted ? const Color(0xFF10B981) : const Color(0xFF6366F1),
+                      ),
+                    ),
+                    if (remainingAmount > 0)
+                      Text(
+                        'Faltan: \$${remainingAmount.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.orange,
+                        ),
+                      ),
+                  ],
                 ),
                 Text(
-                  '\$${goal.targetAmount.toStringAsFixed(2)}',
+                  'Meta: \$${goal.targetAmount.toStringAsFixed(2)}',
                   style: const TextStyle(
                     fontSize: 14,
                     color: Colors.white70,
@@ -316,21 +509,32 @@ class _SavingsScreenState extends State<SavingsScreen> {
               ),
             ),
             
-            // Botones de acción
             const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
-                  child: OutlinedButton(
+                  child: ElevatedButton(
                     onPressed: () => _showAddMoneyDialog(goal),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF10B981),
-                      side: const BorderSide(color: Color(0xFF10B981)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF10B981),
+                      foregroundColor: Colors.white,
                     ),
                     child: const Text('Agregar Dinero'),
                   ),
                 ),
                 const SizedBox(width: 8),
+                
+                if (goal.currentAmount > 0)
+                  OutlinedButton(
+                    onPressed: () => _showWithdrawDialog(goal),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFEC4899),
+                      side: const BorderSide(color: Color(0xFFEC4899)),
+                    ),
+                    child: const Text('Retirar'),
+                  ),
+                const SizedBox(width: 8),
+                
                 IconButton(
                   icon: const Icon(Icons.edit, color: Colors.blue),
                   onPressed: () => _showEditGoalDialog(goal),
@@ -362,55 +566,6 @@ class _SavingsScreenState extends State<SavingsScreen> {
       builder: (context) => AddEditGoalDialog(
         goal: goal,
         onSave: _updateSavingGoal,
-      ),
-    );
-  }
-
-  void _showAddMoneyDialog(SavingGoal goal) {
-    final amountController = TextEditingController();
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1B4B),
-        title: Text(
-          'Agregar a ${goal.name}',
-          style: const TextStyle(color: Colors.white),
-        ),
-        content: TextField(
-          controller: amountController,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: 'Cantidad a agregar',
-            labelStyle: TextStyle(color: Colors.white70),
-            prefixText: '\$',
-          ),
-          style: const TextStyle(color: Colors.white),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Cancelar',
-              style: TextStyle(color: Color(0xFF6366F1)),
-            ),
-          ),
-          TextButton(
-            onPressed: () {
-              final amount = double.tryParse(amountController.text) ?? 0;
-              if (amount > 0) {
-                _addToSavingGoal(goal.id!, amount);
-                Navigator.pop(context);
-              } else {
-                _showErrorSnackbar('Ingresa una cantidad válida');
-              }
-            },
-            child: const Text(
-              'Agregar',
-              style: TextStyle(color: Color(0xFF10B981)),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -504,6 +659,13 @@ class _AddEditGoalDialogState extends State<AddEditGoalDialog> {
               decoration: const InputDecoration(
                 labelText: 'Nombre de la meta',
                 labelStyle: TextStyle(color: Colors.white70),
+                border: OutlineInputBorder(),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Color(0xFF6366F1)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Color(0xFF8B5CF6)),
+                ),
               ),
               style: const TextStyle(color: Colors.white),
             ),
@@ -513,6 +675,13 @@ class _AddEditGoalDialogState extends State<AddEditGoalDialog> {
               decoration: const InputDecoration(
                 labelText: 'Descripción',
                 labelStyle: TextStyle(color: Colors.white70),
+                border: OutlineInputBorder(),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Color(0xFF6366F1)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Color(0xFF8B5CF6)),
+                ),
               ),
               style: const TextStyle(color: Colors.white),
             ),
@@ -524,6 +693,13 @@ class _AddEditGoalDialogState extends State<AddEditGoalDialog> {
                 labelText: 'Meta de ahorro',
                 labelStyle: TextStyle(color: Colors.white70),
                 prefixText: '\$',
+                border: OutlineInputBorder(),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Color(0xFF6366F1)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Color(0xFF8B5CF6)),
+                ),
               ),
               style: const TextStyle(color: Colors.white),
             ),
@@ -538,6 +714,14 @@ class _AddEditGoalDialogState extends State<AddEditGoalDialog> {
                 Expanded(
                   child: TextButton(
                     onPressed: _selectDate,
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF6366F1),
+                      backgroundColor: const Color(0xFF0F0F23),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        side: const BorderSide(color: Color(0xFF6366F1)),
+                      ),
+                    ),
                     child: Text(
                       '${_targetDate.day}/${_targetDate.month}/${_targetDate.year}',
                       style: const TextStyle(color: Color(0xFF6366F1)),
@@ -606,6 +790,20 @@ class _AddEditGoalDialogState extends State<AddEditGoalDialog> {
       initialDate: _targetDate,
       firstDate: DateTime.now(),
       lastDate: DateTime(2100),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: Color(0xFF6366F1),
+              onPrimary: Colors.white,
+              surface: Color(0xFF1E1B4B),
+              onSurface: Colors.white,
+            ),
+            dialogBackgroundColor: const Color(0xFF1E1B4B),
+          ),
+          child: child!,
+        );
+      },
     );
     if (picked != null && picked != _targetDate) {
       setState(() => _targetDate = picked);

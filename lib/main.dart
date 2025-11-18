@@ -11,7 +11,7 @@ import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/balance_screen.dart';
-import 'screens/savings_screen.dart';
+import 'screens/savings_screen.dart' as savings_screen; // Alias para evitar conflicto
 
 // Proveedor de servicios - usa solo OptimizedTransactionService
 final OptimizedTransactionService transactionService = OptimizedTransactionService();
@@ -37,15 +37,15 @@ class GastitoApp extends StatelessWidget {
         scaffoldBackgroundColor: const Color(0xFF0F0F23),
         useMaterial3: true,
       ),
-      home: AuthWrapper(),
+      home: const AuthWrapper(),
       routes: {
-        '/splash': (context) => SplashScreen(),
-        '/login': (context) => LoginScreen(),
-        '/register': (context) => RegisterScreen(),
-        '/home': (context) => HomeScreen(),
-        '/balance': (context) => BalanceScreen(),
-        '/statistics': (context) => StatisticsScreen(),
-        '/savings': (context) => SavingsScreen(),
+        '/splash': (context) => const SplashScreen(),
+        '/login': (context) => const LoginScreen(),
+        '/register': (context) => const RegisterScreen(),
+        '/home': (context) => const HomeScreen(),
+        '/balance': (context) => const BalanceScreen(),
+        '/statistics': (context) => const StatisticsScreen(),
+        '/savings': (context) => const savings_screen.SavingsScreen(), // Usa el alias
       },
       debugShowCheckedModeBanner: false,
     );
@@ -53,6 +53,8 @@ class GastitoApp extends StatelessWidget {
 }
 
 class AuthWrapper extends StatelessWidget {
+  const AuthWrapper({Key? key}) : super(key: key);
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(

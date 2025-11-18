@@ -244,15 +244,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showEditTransactionModal(my_models.Transaction transaction) {
-    final totalsWithoutOriginal = _calculateTotalsWithoutTransaction(transaction);
-    // ignore: unused_local_variable
-    final availableBalance = totalsWithoutOriginal['income']! - totalsWithoutOriginal['expenses']!;
-    
     showDialog(
       context: context,
       builder: (context) => AddTransactionModal(
         onTransactionAdded: _addTransaction,
         onTransactionUpdated: _updateTransaction,
+        transactionToEdit: transaction,
+        availableBalance: 0, // No necesita saldo disponible en edición
       ),
     ).then((_) {
       _refreshData();
